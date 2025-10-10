@@ -4,7 +4,7 @@ const readline = require('readline');
 const { setTimeout: sleep } = require('timers/promises');
 
 const { initWhatsapp, sendToGroups } = require('./whatsappBot');
-const { searchItems, generateAffiliateLink, buildProductUrl } = require('./shopeeApi');
+const { searchAllItems, generateAffiliateLink, buildProductUrl } = require('./shopeeApi');
 const { getDb, alreadySent, markSent } = require('./database');
 
 const REQUIRED_ENV = [
@@ -15,10 +15,10 @@ const REQUIRED_ENV = [
   'WHATSAPP_GROUPS',
 ];
 
-const MIN_DISCOUNT_PERCENT = Number(process.env.MIN_DISCOUNT_PERCENT || 0);
-const MAX_RESULTS = Number(process.env.MAX_RESULTS || 20);
-const INTERVAL_SECONDS = Number(process.env.SEND_INTERVAL_SECONDS || 600);
-const SEND_IMAGES = String(process.env.SEND_IMAGES || 'false').toLowerCase() === 'true';
+const MIN_DISCOUNT_PERCENT = getNumberEnv('MIN_DISCOUNT_PERCENT', 0, { min: 0 });
+const MAX_RESULTS = Math.max(1, getNumberEnv('MAX_RESULTS', 20, { min: 1 }));
+const INTERVAL_SECONDS = getNumberEnv('SEND_INTERVAL_SECONDS', 600, { min: 10 });
+const SEND_IMAGES = String(process.env.SEND_IMAGES || 'false').trim().toLowerCase() === 'true';
 const KEYWORDS = parseKeywords(process.env.SEARCH_KEYWORDS || '');
 const WHATSAPP_GROUPS = parseGroups(process.env.WHATSAPP_GROUPS || '[]');
 const REGION = (process.env.SHOPEE_REGION || 'br').toLowerCase();
@@ -27,6 +27,16 @@ let paused = false;
 let shouldExit = false;
 let whatsappClient;
 let database;
+let fatalShutdownInProgress = false;
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Bot] Promessa não tratada detectada:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[Bot] Exceção não tratada:', error);
+  handleFatalError(error);
+});
 
 function ensureEnv() {
   const missing = REQUIRED_ENV.filter((key) => !process.env[key] || process.env[key].length === 0);
@@ -63,6 +73,18 @@ function parseGroups(value) {
     .filter((name) => name.length > 0);
 }
 
+function getNumberEnv(key, fallback, { min } = {}) {
+  const raw = process.env[key];
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  if (typeof min === 'number' && parsed < min) {
+    return min;
+  }
+  return parsed;
+}
+
 function formatPrice(value) {
   return Number(value || 0).toLocaleString('pt-BR', {
     minimumFractionDigits: 2,
@@ -71,13 +93,64 @@ function formatPrice(value) {
 }
 
 function normaliseShopeePrice(raw) {
-  const number = Number(raw || 0);
-  if (Number.isNaN(number)) return 0;
-  if (number === 0) return 0;
-  if (number < 10000) {
-    return number;
+  if (raw === null || raw === undefined) {
+    return 0;
   }
-  return number / 100000;
+
+  const number = Number(raw);
+  if (!Number.isFinite(number) || number === 0) {
+    return 0;
+  }
+
+  if (Math.abs(number) >= 100000) {
+    return number / 100000;
+  }
+
+  if (Math.abs(number) >= 100) {
+    return number / 100;
+  }
+
+  return number;
+}
+
+function pickPrice(details, fields, fallback = 0) {
+  for (const field of fields) {
+    if (details && Object.prototype.hasOwnProperty.call(details, field)) {
+      const value = normaliseShopeePrice(details[field]);
+      if (value > 0) {
+        return value;
+      }
+    }
+  }
+  return fallback;
+}
+
+function extractPriceInfo(details) {
+  const currentPrice = pickPrice(details, [
+    'price_with_discount',
+    'price_min',
+    'price_min_inc_vat',
+    'price',
+    'price_max',
+    'item_price',
+    'promotion_price',
+  ]);
+
+  const originalPrice = pickPrice(
+    details,
+    [
+      'price_before_discount',
+      'price_min_before_discount',
+      'price_max_before_discount',
+      'original_price',
+      'price_original',
+      'price_sticker',
+      'item_original_price',
+    ],
+    currentPrice
+  );
+
+  return { currentPrice: currentPrice || originalPrice, originalPrice: originalPrice || currentPrice };
 }
 
 function buildImageUrl(imageId) {
@@ -139,17 +212,38 @@ async function shutdown() {
   }
 }
 
+async function handleFatalError(error) {
+  if (fatalShutdownInProgress) {
+    return;
+  }
+  fatalShutdownInProgress = true;
+  shouldExit = true;
+  console.error('[Bot] Iniciando desligamento por falha fatal...');
+  try {
+    await shutdown();
+  } catch (shutdownError) {
+    console.error('[Bot] Erro durante desligamento:', shutdownError);
+  } finally {
+    process.exit(1);
+  }
+}
+
 async function processKeyword(keyword) {
   console.log(`[Bot] Buscando ofertas para "${keyword}"...`);
   let items;
   try {
-    items = await searchItems({ keyword, limit: MAX_RESULTS, offset: 0 });
+    items = await searchAllItems({ keyword, totalLimit: MAX_RESULTS });
   } catch (error) {
     console.error(`[Bot] Erro ao buscar itens para "${keyword}":`, error.response?.data || error.message);
     return false;
   }
 
-  console.log(`[Bot] ${items.length} itens retornados para "${keyword}".`);
+  if (!Array.isArray(items) || items.length === 0) {
+    console.log(`[Bot] Nenhum item retornado para "${keyword}".`);
+    return true;
+  }
+
+  console.log(`[Bot] ${items.length} itens analisados para "${keyword}".`);
 
   for (const item of items) {
     if (shouldExit) {
@@ -180,14 +274,17 @@ async function processKeyword(keyword) {
       duplicate = false;
     }
     if (duplicate) {
+      console.log(`[Bot] Oferta já enviada anteriormente (${uniqueId}). Ignorando.`);
       continue;
     }
 
-    const price = normaliseShopeePrice(details.price || details.item_price || 0);
-    const originalPrice = normaliseShopeePrice(details.price_before_discount || details.original_price || price);
+    const { currentPrice: price, originalPrice } = extractPriceInfo(details);
     const discountPercent = originalPrice > 0 ? ((originalPrice - price) / originalPrice) * 100 : 0;
 
     if (discountPercent < MIN_DISCOUNT_PERCENT) {
+      console.log(
+        `[Bot] ${uniqueId} não atende o desconto mínimo (${discountPercent.toFixed(1)}% < ${MIN_DISCOUNT_PERCENT}%).`
+      );
       continue;
     }
 
@@ -277,6 +374,5 @@ async function run() {
 
 run().catch(async (error) => {
   console.error('[Bot] Falha fatal:', error);
-  await shutdown();
-  process.exit(1);
+  await handleFatalError(error);
 });

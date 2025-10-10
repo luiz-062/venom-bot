@@ -9,6 +9,7 @@ Automated Node.js bot that fetches discounted products from Shopee via the offic
 - 🤖 Persistent Venom Bot session with multi-device support, QR code login, and automatic reconnection.
 - 🗃️ Local SQLite history (`sent_offers`) ensures the same promotion is never sent twice.
 - ⏱️ Configurable fetch interval, keyword list, minimum discount filter, and optional image sending.
+- 🔁 Smart pagination to inspect up to `MAX_RESULTS` items per keyword in a single cycle.
 - 🎯 Automatic affiliate link generation with graceful UTM fallback if the API cannot produce a link.
 - 🧭 Console controls: `p` pauses/resumes the campaign, `q` performs a graceful shutdown.
 - 🪵 Detailed logging of API calls, filtering decisions, WhatsApp sends, errors, and pause/resume state changes.
@@ -131,7 +132,7 @@ Images are attached when `SEND_IMAGES=true` and the API response provides an ima
 
 - Shopee API calls are automatically retried on HTTP 429/503 responses with exponential backoff.
 - If the affiliate API cannot return a link, the bot falls back to the original URL with UTM parameters.
-- WhatsApp disconnections trigger automatic reconnection attempts and are logged.
+- WhatsApp disconnections trigger automatic reconnection attempts, cached group lists are refreshed automatically.
 - All decisions (filtering, duplicates, pauses, retries) are logged to the console for transparency.
 
 ## Optional enhancements
