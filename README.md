@@ -64,6 +64,37 @@ Automated Node.js bot that fetches discounted products from Shopee via the offic
    - A QR code will appear in the console on first launch. Scan it with WhatsApp to authenticate.
    - The bot keeps running 24/7, automatically fetching new items and posting them to your groups.
 
+## Como executar (passo a passo em Português)
+
+1. **Instale o Node.js 18 ou superior** no Windows e abra o *Terminal* ou *PowerShell*.
+2. **Baixe o projeto**
+   ```powershell
+   git clone https://github.com/<seu-usuario>/shopee-affiliate-whatsapp-bot.git
+   cd shopee-affiliate-whatsapp-bot
+   ```
+3. **Instale as dependências**
+   ```powershell
+   npm install
+   ```
+4. **Copie o arquivo de exemplo de variáveis de ambiente**
+   ```powershell
+   copy .env.example .env
+   ```
+   Preencha o arquivo `.env` com os dados da sua conta Shopee Partner/Affiliate e com os nomes exatos dos grupos de WhatsApp.
+5. **Crie o banco de dados local**
+   ```powershell
+   npm run init-db
+   ```
+6. **Execute o bot**
+   ```powershell
+   npm start
+   ```
+   - No primeiro uso, um QR Code será exibido no terminal. Escaneie com o WhatsApp (modo multi-dispositivo).
+   - Após autenticado, o bot ficará rodando continuamente, enviando promoções conforme os filtros definidos.
+7. **Controle pelo terminal**
+   - Digite `p` para pausar ou retomar o envio de mensagens.
+   - Digite `q` para encerrar o bot de forma segura.
+
 ## Runtime controls
 
 - Press **`p`** in the terminal to toggle between paused and active modes.
