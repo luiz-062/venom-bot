@@ -22,22 +22,36 @@ function getDb() {
         return reject(err);
       }
 
-      db.run(
-        `CREATE TABLE IF NOT EXISTS sent_offers (
-          id INTEGER PRIMARY KEY,
-          item_id TEXT UNIQUE,
-          name TEXT,
-          affiliate_link TEXT,
-          sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`,
-        (createErr) => {
-          if (createErr) {
-            reject(createErr);
-          } else {
-            resolve(db);
+      db.serialize(() => {
+        db.run('PRAGMA journal_mode = WAL;');
+        db.run('PRAGMA synchronous = NORMAL;');
+        db.run(
+          `CREATE TABLE IF NOT EXISTS sent_offers (
+            id INTEGER PRIMARY KEY,
+            item_id TEXT UNIQUE,
+            name TEXT,
+            affiliate_link TEXT,
+            sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )`,
+          (createErr) => {
+            if (createErr) {
+              reject(createErr);
+              return;
+            }
+
+            db.run(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_sent_offers_item_id ON sent_offers (item_id)',
+              (indexErr) => {
+                if (indexErr) {
+                  reject(indexErr);
+                } else {
+                  resolve(db);
+                }
+              }
+            );
           }
-        }
-      );
+        );
+      });
     });
   });
 

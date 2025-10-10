@@ -101,21 +101,48 @@ async function performRequest({ path, method = 'GET', params = {}, data = {} }) 
   throw new Error('Falha ao comunicar com a Shopee após várias tentativas.');
 }
 
+const MAX_PAGE_SIZE = 100;
+
+function sanitiseLimit(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 20;
+  }
+  return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(parsed)));
+}
+
 async function searchItems({ keyword, limit = 20, offset = 0 }) {
+  const safeLimit = sanitiseLimit(limit);
+  const safeOffset = Math.max(0, Number(offset) || 0);
+
   const path = '/api/v2/product/search_item';
   const params = {
     keyword,
-    limit,
-    offset,
+    limit: safeLimit,
+    offset: safeOffset,
   };
 
   const data = await performRequest({ path, method: 'GET', params });
-  return data?.items || [];
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return {
+    items,
+    hasMore: Boolean(data?.has_more),
+    nextOffset:
+      typeof data?.next_offset === 'number'
+        ? data.next_offset
+        : safeOffset + items.length,
+    totalCount: typeof data?.total === 'number' ? data.total : data?.total_count,
+  };
 }
 
 async function generateAffiliateLink({ targetUrl }) {
   if (!targetUrl) {
     throw new Error('targetUrl é obrigatório para gerar link de afiliado');
+  }
+
+  if (!AFFILIATE_ID) {
+    console.warn('[Shopee API] SHOPEE_AFFILIATE_ID não configurado. Aplicando fallback de tracking.');
+    return appendTrackingParams(targetUrl);
   }
 
   const path = '/api/v2/affiliate/generate_links';
@@ -190,8 +217,31 @@ function buildProductUrl({ shopId, itemId }) {
   return `${domain}/product/${shopId}/${itemId}`;
 }
 
+async function searchAllItems({ keyword, totalLimit = 20 }) {
+  const results = [];
+  let offset = 0;
+  let keepFetching = true;
+
+  while (keepFetching && results.length < totalLimit) {
+    const pageLimit = Math.min(MAX_PAGE_SIZE, totalLimit - results.length);
+    const { items, hasMore, nextOffset } = await searchItems({ keyword, limit: pageLimit, offset });
+    if (!items.length) {
+      break;
+    }
+
+    results.push(...items);
+
+    const computedNextOffset = typeof nextOffset === 'number' ? nextOffset : offset + items.length;
+    keepFetching = hasMore && computedNextOffset > offset;
+    offset = computedNextOffset;
+  }
+
+  return results.slice(0, totalLimit);
+}
+
 module.exports = {
   searchItems,
+  searchAllItems,
   generateAffiliateLink,
   buildProductUrl,
 };
