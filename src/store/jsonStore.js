@@ -19,7 +19,10 @@ const DEFAULT_CONFIG = {
     example_link: '',
     tracking_notes: '',
     config_status: 'pendente',
-    domains: ['mercadolivre.com.br', 'mercadolibre.com'],
+    // meli.la é o encurtador usado nas mensagens reais de oferta do Mercado
+    // Livre observadas em teste; ainda assim, confirme oficialmente que o
+    // domínio pertence à plataforma antes de confiar nele em produção.
+    domains: ['mercadolivre.com.br', 'mercadolibre.com', 'meli.la'],
   },
   shopee: {
     platform: 'shopee',
