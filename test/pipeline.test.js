@@ -107,6 +107,23 @@ test('processOffer: troca_parametro config generates a link but keeps it unconfi
   assert.equal(offer.final_status, 'revisar_antes_de_publicar');
 });
 
+test('processOffer: URL fragment with affiliate/session tracking survives link cleaning', async () => {
+  // fetch() never transmits the URL fragment, so response.url from a real
+  // request never includes one — this mocks that real behavior to make sure
+  // we don't silently drop fragment-based tracking (observed in practice:
+  // matt_tool_id, source=affiliate-profile, etc. appear after "#" on some
+  // Mercado Livre links) while "cleaning" the link.
+  mockFetchAlwaysOk('https://www.mercadolivre.com.br/produto/MLB444');
+  store.savePlatformConfig('mercado_livre', { link_generation_method: 'nao_configurado', domains: ['mercadolivre.com.br'] });
+
+  const raw =
+    'Relógio bom\nR$ 94,20\nhttps://www.mercadolivre.com.br/produto/MLB444#matt_tool_id=123&source=affiliate-profile';
+  const offer = await processOffer(raw);
+
+  assert.match(offer.clean_link, /#matt_tool_id=123&source=affiliate-profile/);
+  assert.match(offer.risks_or_doubts, /fragmento/);
+});
+
 test('processOffer: link that fails to open is rejected', async () => {
   mockFetchFails();
   store.savePlatformConfig('mercado_livre', { link_generation_method: 'nao_configurado', domains: ['mercadolivre.com.br'] });

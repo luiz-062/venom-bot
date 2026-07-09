@@ -1,5 +1,5 @@
 const { extractOfferData } = require('./extract');
-const { detectPlatform, stripTrackingParams, resolveFinalUrl } = require('./linkUtils');
+const { detectPlatform, stripTrackingParams, resolveFinalUrl, preserveFragment } = require('./linkUtils');
 const { generateAffiliateLink } = require('./affiliateLink');
 const { generateCopies } = require('./copyGenerator');
 const store = require('../store/jsonStore');
@@ -90,14 +90,26 @@ async function processOffer(rawText) {
 
   const strippedLink = stripTrackingParams(originalLink);
   const resolution = await resolveFinalUrl(strippedLink);
-  const cleanLink = stripTrackingParams(resolution.finalUrl || strippedLink);
   const linkOpenCheck = resolution.ok ? 'ok' : 'falhou';
+
+  // fetch() never sends the URL fragment (it's client-side only), so a
+  // resolved redirect target never carries one back — even when the
+  // fragment held real attribution data (observed in practice on some
+  // Mercado Livre links: matt_tool_id, source=affiliate-profile, etc).
+  // Reattach the original fragment before treating the link as "clean".
+  const resolvedWithFragment = preserveFragment(resolution.finalUrl || strippedLink, strippedLink);
+  const cleanLink = stripTrackingParams(resolvedWithFragment);
 
   if (!resolution.ok) {
     risks.push(
       `O link final não respondeu com sucesso (status ${resolution.status ?? 'desconhecido'}${
         resolution.error ? `, erro: ${resolution.error}` : ''
       }).`
+    );
+  }
+  if (strippedLink.includes('#') || (resolution.finalUrl || '').includes('#')) {
+    risks.push(
+      'O link contém um fragmento (#...) que pode carregar dados de rastreio/sessão do afiliado. Confirme manualmente que ele foi preservado no link final antes de publicar.'
     );
   }
 

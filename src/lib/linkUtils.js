@@ -44,6 +44,32 @@ function stripTrackingParams(url) {
 }
 
 /**
+ * The URL fragment (everything after "#") is never sent to the server, so
+ * following redirects with fetch() always yields a final URL stripped of it
+ * — even when the fragment carries attribution data. Some Mercado Livre
+ * links observed in practice put affiliate/session tracking params there
+ * (e.g. matt_tool_id, source=affiliate-profile), so silently dropping the
+ * fragment while "cleaning" a link could destroy real commission tracking.
+ * This reattaches the original fragment to a resolved URL when the
+ * resolved URL didn't already provide one of its own.
+ */
+function preserveFragment(resolvedUrl, originalUrl) {
+  try {
+    const original = new URL(originalUrl);
+    if (!original.hash) {
+      return resolvedUrl;
+    }
+    const resolved = new URL(resolvedUrl);
+    if (!resolved.hash) {
+      resolved.hash = original.hash;
+    }
+    return resolved.toString();
+  } catch (error) {
+    return resolvedUrl;
+  }
+}
+
+/**
  * Follows redirects for the given URL and reports whether the final
  * destination responds successfully. This is the MVP's *only* validation:
  * it proves the link is reachable, nothing more. It does NOT confirm price,
@@ -81,4 +107,4 @@ async function resolveFinalUrl(url) {
   }
 }
 
-module.exports = { detectPlatform, stripTrackingParams, resolveFinalUrl };
+module.exports = { detectPlatform, stripTrackingParams, resolveFinalUrl, preserveFragment };
