@@ -1,0 +1,17 @@
+{
+  "name": "shopee-affiliate-whatsapp-bot",
+  "version": "1.0.0",
+  "description": "Shopee affiliate promotions bot for WhatsApp groups using venom-bot and official Shopee APIs.",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "init-db": "node scripts/initDb.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
+    "sqlite3": "^5.1.6",
+    "venom-bot": "^5.0.7"
+  }
+}
