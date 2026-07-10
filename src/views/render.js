@@ -117,7 +117,13 @@ function offerPage(offer) {
       ${fieldRow('Link original', link(offer.original_link))}
       ${fieldRow('Link limpo', link(offer.clean_link))}
       ${fieldRow('Link afiliado', offer.affiliate_link ? link(offer.affiliate_link) : '<span class="muted">pendente de geração manual</span>')}
-      ${fieldRow('Método de geração do link', `<code>${escapeHtml(offer.affiliate_method)}</code>`)}
+      ${fieldRow(
+        'Método de geração do link',
+        `<code>${escapeHtml(offer.affiliate_method)}</code>` +
+          (offer.affiliate_method === 'troca_parametro_hipotese'
+            ? '<br><span class="risk">Pesquisa externa (10/07/2026) indica que o Mercado Livre não credita comissão para links que não passaram pelo gerador oficial — trate este link como muito provavelmente sem comissão. Gere o link de verdade na central de afiliados e cole em "Ajustar link afiliado" abaixo.</span>'
+            : '')
+      )}
       ${fieldRow('Status de validação do afiliado', `<code>${escapeHtml(offer.affiliate_validation_status)}</code>`)}
       ${fieldRow('Link abre?', `<code>${escapeHtml(offer.link_open_check)}</code>`)}
       ${fieldRow('Preço informado', offer.price_informed || '<span class="muted">—</span>')}
@@ -219,13 +225,28 @@ function configFormFields(cfg) {
 
     <label>Método de geração de link afiliado</label>
     <select name="link_generation_method">
-      ${['nao_configurado', 'troca_parametro', 'manual']
+      ${Object.entries({
+        nao_configurado: 'não configurado',
+        troca_parametro: 'troca_parametro (NÃO recomendado — evidência oficial indica que não gera comissão)',
+        manual: 'manual (recomendado — colar link gerado na central de afiliados / barra de afiliados)',
+      })
         .map(
-          (opt) => `<option value="${opt}" ${cfg.link_generation_method === opt ? 'selected' : ''}>${opt}</option>`
+          ([opt, optLabel]) =>
+            `<option value="${opt}" ${cfg.link_generation_method === opt ? 'selected' : ''}>${escapeHtml(optLabel)}</option>`
         )
         .join('')}
     </select>
-    <p class="muted">"troca_parametro" é sempre tratado como hipótese técnica não confirmada — nunca como garantia de comissão.</p>
+    <p class="muted">
+      ${
+        cfg.platform === 'mercado_livre'
+          ? `A própria central de ajuda do Mercado Livre afirma que divulgar um link comum — sem passar pelo Gerador de
+      Links ou pela Barra de afiliados — não gera comissão. Isso inclui um link com parâmetro adicionado manualmente
+      por este sistema. Trate "troca_parametro" como praticamente confirmado como não funcional (e com risco de
+      suspensão de conta, segundo relatos de afiliados), não apenas "não confirmado". Use "manual" e cole o link
+      gerado pela central oficial.`
+          : `"troca_parametro" é sempre tratado como hipótese técnica não confirmada — nunca como garantia de comissão. Confirme o método oficial desta plataforma antes de ativar.`
+      }
+    </p>
 
     <label>Nome do parâmetro de rastreio (se método = troca_parametro)</label>
     <input type="text" name="tracking_param_name" value="${escapeHtml(cfg.tracking_param_name)}">
@@ -254,6 +275,34 @@ function configFormFields(cfg) {
   `;
 }
 
+function sampleLinkDetectorBlock(cfg) {
+  return `
+    <h3>Detectar formato de link (referência, não é usado para gerar links)</h3>
+    <p class="muted">
+      Cole aqui UM link de afiliado real gerado pela sua central de afiliados/barra de afiliados do Mercado Livre
+      só para registrar o formato usado pela sua conta. Isso é só um log de referência — o sistema NUNCA usa esse
+      link (nem os valores detectados de matt_word/matt_tool) para gerar automaticamente o link de outro produto.
+      Segundo o Mercado Livre, um link que não passou pelo gerador oficial não gera comissão — cole sempre o link
+      real gerado, produto a produto, no campo "Ajustar link afiliado" da oferta.
+    </p>
+    <form method="post" action="/config/mercado_livre/sample-link">
+      <label for="sample_link">Link de exemplo gerado pela central de afiliados</label>
+      <input type="text" id="sample_link" name="sample_link" placeholder="https://meli.la/... ou link longo com matt_word/matt_tool">
+      <button type="submit">Detectar formato</button>
+    </form>
+    <table class="card">
+      ${fieldRow('Último formato detectado', cfg.detected_link_format || '<span class="muted">nenhum ainda</span>')}
+      ${fieldRow('matt_word detectado', cfg.detected_matt_word || '<span class="muted">—</span>')}
+      ${fieldRow('matt_tool detectado', cfg.detected_matt_tool || '<span class="muted">—</span>')}
+      ${fieldRow('tag detectado', cfg.detected_tag || '<span class="muted">—</span>')}
+      ${fieldRow(
+        'Salvo em',
+        cfg.sample_link_saved_at ? escapeHtml(new Date(cfg.sample_link_saved_at).toLocaleString('pt-BR')) : '<span class="muted">—</span>'
+      )}
+    </table>
+  `;
+}
+
 function configPage(config) {
   return layout(
     'Configuração por plataforma',
@@ -267,6 +316,7 @@ function configPage(config) {
         ${configFormFields(config.mercado_livre)}
         <button type="submit">Salvar</button>
       </form>
+      ${sampleLinkDetectorBlock(config.mercado_livre)}
     </div>
 
     <div class="card">

@@ -154,4 +154,10 @@ async function resolveFinalUrl(url) {
   }
 }
 
-module.exports = { detectPlatform, stripTrackingParams, resolveFinalUrl, preserveFragment };
+module.exports = {
+  detectPlatform,
+  stripTrackingParams,
+  resolveFinalUrl,
+  preserveFragment,
+  PLATFORM_AFFILIATE_PARAMS,
+};

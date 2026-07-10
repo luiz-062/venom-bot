@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 
 const { processOffer } = require('./lib/pipeline');
+const { detectAffiliateLinkFormat } = require('./lib/affiliateLinkFormat');
 const store = require('./store/jsonStore');
 const { indexPage, offerPage, historyPage, configPage } = require('./views/render');
 
@@ -87,6 +88,21 @@ app.post('/config/:platform', (req, res) => {
     tracking_notes: req.body.tracking_notes || '',
     config_status: req.body.config_status || 'pendente',
     domains,
+  });
+
+  res.redirect('/config');
+});
+
+app.post('/config/mercado_livre/sample-link', (req, res) => {
+  const sampleLink = String(req.body.sample_link || '').trim();
+  const detection = detectAffiliateLinkFormat(sampleLink);
+
+  store.savePlatformConfig('mercado_livre', {
+    detected_link_format: detection.format,
+    detected_matt_word: detection.detectedMattWord || '',
+    detected_matt_tool: detection.detectedMattTool || '',
+    detected_tag: detection.detectedTag || '',
+    sample_link_saved_at: new Date().toISOString(),
   });
 
   res.redirect('/config');
