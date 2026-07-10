@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const DATA_DIR = process.env.OFFERS_DATA_DIR || path.join(__dirname, '..', '..', 'data');
 const OFFERS_FILE = path.join(DATA_DIR, 'offers.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'platform-config.json');
+const APP_CONFIG_FILE = path.join(DATA_DIR, 'app-config.json');
 
 const DEFAULT_CONFIG = {
   mercado_livre: {
@@ -55,6 +56,26 @@ const DEFAULT_CONFIG = {
   },
 };
 
+// Configuração operacional (não é "por plataforma de oferta" como
+// platform-config.json, por isso fica num arquivo próprio): canais do
+// Telegram a monitorar/publicar, e os liga/desliga da automação. Os toggles
+// default true porque o usuário pediu automação integral por padrão — mas
+// existem justamente para poderem ser desligados sem mexer em código.
+const DEFAULT_APP_CONFIG = {
+  telegram: {
+    source_chat_ids: [],
+    publish_channel_id: '',
+    owner_chat_id: '',
+    auto_publish_enabled: true,
+    last_session_expired_alert_at: '',
+  },
+  mercado_livre_automation: {
+    auto_generate_enabled: true,
+    min_delay_seconds: 45,
+    max_delay_seconds: 120,
+  },
+};
+
 function ensureDataFiles() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(OFFERS_FILE)) {
@@ -62,6 +83,9 @@ function ensureDataFiles() {
   }
   if (!fs.existsSync(CONFIG_FILE)) {
     writeJson(CONFIG_FILE, DEFAULT_CONFIG);
+  }
+  if (!fs.existsSync(APP_CONFIG_FILE)) {
+    writeJson(APP_CONFIG_FILE, DEFAULT_APP_CONFIG);
   }
 }
 
@@ -85,6 +109,14 @@ function getOffer(id) {
   return listOffers().find((offer) => offer.id === id) || null;
 }
 
+// Nota sobre concorrência: a leitura+mutação+escrita abaixo é inteiramente
+// síncrona (fs.*Sync), então dentro de um único processo Node ela já roda
+// "até o fim" sem outra chamada conseguir se intercalar no meio (run-to-
+// completion) — não existe condição de corrida real aqui enquanto tudo
+// (servidor web + workers de automação) rodar no mesmo processo (ver
+// src/index.js). O retorno é embrulhado em Promise.resolve() só para os
+// chamadores assíncronos poderem usar `await` de forma consistente, sem
+// mudar quando o trabalho de fato acontece.
 function saveOffer(offer) {
   ensureDataFiles();
   const offers = readJson(OFFERS_FILE);
@@ -96,7 +128,7 @@ function saveOffer(offer) {
   };
   offers.push(record);
   writeJson(OFFERS_FILE, offers);
-  return record;
+  return Promise.resolve(record);
 }
 
 function updateOffer(id, patch) {
@@ -104,11 +136,11 @@ function updateOffer(id, patch) {
   const offers = readJson(OFFERS_FILE);
   const index = offers.findIndex((offer) => offer.id === id);
   if (index === -1) {
-    return null;
+    return Promise.resolve(null);
   }
   offers[index] = { ...offers[index], ...patch, updated_at: new Date().toISOString() };
   writeJson(OFFERS_FILE, offers);
-  return offers[index];
+  return Promise.resolve(offers[index]);
 }
 
 function findDuplicate({ cleanLink, productName, withinDays = 30 }) {
@@ -129,6 +161,29 @@ function findDuplicate({ cleanLink, productName, withinDays = 30 }) {
   return null;
 }
 
+// Ofertas do Mercado Livre esperando o worker de automação de navegador
+// gerar o link afiliado de verdade (ver src/automation/linkGenerationWorker.js).
+function listOffersPendingAutomaticLink() {
+  return listOffers().filter(
+    (offer) => offer.platform === 'mercado_livre' && offer.affiliate_method === 'pendente_automatico' && !offer.affiliate_link
+  );
+}
+
+// Ofertas com o mínimo de correção técnica pra publicar sozinho: o link abre
+// e existe um link afiliado. NÃO é o mesmo que "comissão confirmada" — essa
+// checagem continua exigindo confirmação humana no painel oficial (ver
+// docs/nova-versao-mvp-mercadolivre.md, seção sobre automação).
+function listOffersReadyToPublish() {
+  return listOffers().filter(
+    (offer) =>
+      offer.platform === 'mercado_livre' &&
+      offer.link_open_check === 'ok' &&
+      Boolean(offer.affiliate_link) &&
+      !offer.duplicate_of &&
+      offer.publish_status !== 'publicado'
+  );
+}
+
 function getPlatformConfig(platform) {
   ensureDataFiles();
   const config = readJson(CONFIG_FILE);
@@ -145,7 +200,26 @@ function savePlatformConfig(platform, patch) {
   const config = readJson(CONFIG_FILE);
   config[platform] = { ...(config[platform] || {}), ...patch, platform };
   writeJson(CONFIG_FILE, config);
-  return config[platform];
+  return Promise.resolve(config[platform]);
+}
+
+function getAppConfig() {
+  ensureDataFiles();
+  return readJson(APP_CONFIG_FILE);
+}
+
+// Merge raso por seção (telegram / mercado_livre_automation), não no objeto
+// inteiro — assim salvar só o toggle do Telegram não apaga os campos da
+// automação do Mercado Livre, e vice-versa.
+function saveAppConfig(patch) {
+  ensureDataFiles();
+  const config = readJson(APP_CONFIG_FILE);
+  const merged = { ...config };
+  Object.entries(patch || {}).forEach(([section, sectionPatch]) => {
+    merged[section] = { ...(config[section] || {}), ...sectionPatch };
+  });
+  writeJson(APP_CONFIG_FILE, merged);
+  return Promise.resolve(merged);
 }
 
 module.exports = {
@@ -154,7 +228,11 @@ module.exports = {
   saveOffer,
   updateOffer,
   findDuplicate,
+  listOffersPendingAutomaticLink,
+  listOffersReadyToPublish,
   getPlatformConfig,
   getAllPlatformConfig,
   savePlatformConfig,
+  getAppConfig,
+  saveAppConfig,
 };

@@ -48,6 +48,7 @@ function layout(title, body) {
     <a href="/">Nova oferta</a>
     <a href="/offers">Histórico</a>
     <a href="/config">Configuração</a>
+    <a href="/config/telegram">Automação (Telegram)</a>
   </nav>
   ${body}
 </body>
@@ -116,12 +117,20 @@ function offerPage(offer) {
       ${fieldRow('Produto identificado', offer.product_name || '<span class="muted">não identificado</span>')}
       ${fieldRow('Link original', link(offer.original_link))}
       ${fieldRow('Link limpo', link(offer.clean_link))}
-      ${fieldRow('Link afiliado', offer.affiliate_link ? link(offer.affiliate_link) : '<span class="muted">pendente de geração manual</span>')}
+      ${fieldRow(
+        'Link afiliado',
+        offer.affiliate_link
+          ? link(offer.affiliate_link)
+          : `<span class="muted">${offer.affiliate_method === 'pendente_automatico' ? 'pendente de geração automática' : 'pendente de geração manual'}</span>`
+      )}
       ${fieldRow(
         'Método de geração do link',
         `<code>${escapeHtml(offer.affiliate_method)}</code>` +
           (offer.affiliate_method === 'troca_parametro_hipotese'
             ? '<br><span class="risk">Pesquisa externa (10/07/2026) indica que o Mercado Livre não credita comissão para links que não passaram pelo gerador oficial — trate este link como muito provavelmente sem comissão. Gere o link de verdade na central de afiliados e cole em "Ajustar link afiliado" abaixo.</span>'
+            : '') +
+          (offer.affiliate_method === 'pendente_automatico'
+            ? '<br><span class="muted">Aguardando o worker de automação gerar o link de verdade na central de afiliados (roda em segundo plano, com atraso entre gerações). Se demorar demais, verifique se a sessão salva do Mercado Livre ainda está válida em /config/telegram.</span>'
             : '')
       )}
       ${fieldRow('Status de validação do afiliado', `<code>${escapeHtml(offer.affiliate_validation_status)}</code>`)}
@@ -133,6 +142,12 @@ function offerPage(offer) {
       ${fieldRow('Outras observações', offer.other_notes || '<span class="muted">—</span>')}
       ${fieldRow('Riscos/dúvidas', offer.risks_or_doubts ? `<span class="risk">${escapeHtml(offer.risks_or_doubts)}</span>` : '<span class="muted">nenhum</span>')}
       ${fieldRow('Duplicidade detectada', offer.duplicate_of ? `<a href="/offers/${offer.duplicate_of}">ver oferta anterior</a>` : '<span class="muted">não</span>')}
+      ${fieldRow(
+        'Publicação',
+        offer.publish_status === 'publicado'
+          ? `<code>publicado</code> em ${offer.published_at ? escapeHtml(new Date(offer.published_at).toLocaleString('pt-BR')) : '—'} (${escapeHtml(offer.published_channel || '—')})`
+          : `<code>${escapeHtml(offer.publish_status || 'nao_publicado')}</code>`
+      )}
     </table>
 
     <h2>Copy 1</h2>
@@ -228,7 +243,8 @@ function configFormFields(cfg) {
       ${Object.entries({
         nao_configurado: 'não configurado',
         troca_parametro: 'troca_parametro (NÃO recomendado — evidência oficial indica que não gera comissão)',
-        manual: 'manual (recomendado — colar link gerado na central de afiliados / barra de afiliados)',
+        manual: 'manual (colar link gerado na central de afiliados / barra de afiliados)',
+        automatico_navegador: 'automático via navegador (imita o Gerador de Links real — requer sessão salva, ver /config/telegram)',
       })
         .map(
           ([opt, optLabel]) =>
@@ -330,4 +346,52 @@ function configPage(config) {
   );
 }
 
-module.exports = { layout, indexPage, offerPage, historyPage, configPage, escapeHtml };
+function telegramConfigPage(appConfig) {
+  const telegram = appConfig.telegram || {};
+  const mlAutomation = appConfig.mercado_livre_automation || {};
+
+  return layout(
+    'Automação (Telegram)',
+    `
+    <h1>Automação via Telegram</h1>
+    <p class="muted">
+      Leitura dos canais-fonte e publicação no seu canal rodam automaticamente em segundo plano
+      (ver <code>src/telegram/sourceReader.js</code> e <code>src/telegram/publisherWorker.js</code>).
+      Essas credenciais (sessão do Telegram, token do bot) ficam só no <code>.env</code> da máquina onde
+      o app roda — aqui você só gerencia quais canais monitorar e liga/desliga a automação.
+    </p>
+    <p class="risk">
+      WhatsApp continua 100% manual — decisão deliberada, sem automação nenhuma nesse canal (ver
+      docs/nova-versao-mvp-mercadolivre.md).
+    </p>
+
+    <form method="post" action="/config/telegram">
+      <label for="source_chat_ids">Canais/grupos-fonte a monitorar (IDs separados por vírgula)</label>
+      <input type="text" id="source_chat_ids" name="source_chat_ids" placeholder="-1001234567890, -1009876543210"
+        value="${escapeHtml((telegram.source_chat_ids || []).join(', '))}">
+      <p class="muted">Use <code>node scripts/listMyChats.js</code> (na sua máquina, depois do login) para descobrir os IDs.</p>
+
+      <label for="publish_channel_id">Canal onde publicar (ID do seu canal próprio)</label>
+      <input type="text" id="publish_channel_id" name="publish_channel_id" value="${escapeHtml(telegram.publish_channel_id)}">
+
+      <label for="owner_chat_id">Seu chat pessoal (para alertas, ex.: sessão do Mercado Livre expirada)</label>
+      <input type="text" id="owner_chat_id" name="owner_chat_id" value="${escapeHtml(telegram.owner_chat_id)}">
+
+      <label><input type="checkbox" name="auto_publish_enabled" ${telegram.auto_publish_enabled ? 'checked' : ''}> Publicar automaticamente no canal (sem revisão humana)</label>
+
+      <label><input type="checkbox" name="auto_generate_enabled" ${mlAutomation.auto_generate_enabled ? 'checked' : ''}> Gerar link do Mercado Livre automaticamente via navegador</label>
+
+      <label for="min_delay_seconds">Atraso mínimo entre gerações de link (segundos)</label>
+      <input type="text" id="min_delay_seconds" name="min_delay_seconds" value="${escapeHtml(mlAutomation.min_delay_seconds)}">
+
+      <label for="max_delay_seconds">Atraso máximo entre gerações de link (segundos)</label>
+      <input type="text" id="max_delay_seconds" name="max_delay_seconds" value="${escapeHtml(mlAutomation.max_delay_seconds)}">
+      <p class="muted">Números de partida, não confirmados oficialmente pelo Mercado Livre — ajuste se perceber bloqueios.</p>
+
+      <button type="submit">Salvar</button>
+    </form>
+  `
+  );
+}
+
+module.exports = { layout, indexPage, offerPage, historyPage, configPage, telegramConfigPage, escapeHtml };

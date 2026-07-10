@@ -2,7 +2,18 @@ const { extractOfferData } = require('./extract');
 const { detectPlatform, stripTrackingParams, resolveFinalUrl, preserveFragment } = require('./linkUtils');
 const { generateAffiliateLink } = require('./affiliateLink');
 const { generateCopies } = require('./copyGenerator');
+const { computeFinalStatus } = require('./finalStatus');
 const store = require('../store/jsonStore');
+
+// Campos de publicação, presentes em todo registro de oferta desde o início
+// (não só nas que chegam a ser elegíveis) para manter o schema uniforme —
+// ver src/telegram/publisherWorker.js.
+const PUBLISH_FIELDS = {
+  publish_status: 'nao_publicado',
+  published_at: null,
+  published_channel: null,
+  automation_attempts: 0,
+};
 
 const SUPPORTED_PLATFORMS = ['mercado_livre'];
 
@@ -47,8 +58,9 @@ async function processOffer(rawText) {
       recommended_copy_whatsapp: '',
       recommended_copy_telegram: '',
       final_status: 'rejeitar',
+      ...PUBLISH_FIELDS,
     };
-    return store.saveOffer(record);
+    return await store.saveOffer(record);
   }
 
   const platformDomains = buildPlatformDomains();
@@ -88,8 +100,9 @@ async function processOffer(rawText) {
       recommended_copy_whatsapp: '',
       recommended_copy_telegram: '',
       final_status: 'rejeitar',
+      ...PUBLISH_FIELDS,
     };
-    return store.saveOffer(record);
+    return await store.saveOffer(record);
   }
 
   // Strips this platform's affiliate attribution (e.g. Mercado Livre's
@@ -147,12 +160,7 @@ async function processOffer(rawText) {
     link: linkForCopy,
   });
 
-  let finalStatus = 'revisar_antes_de_publicar';
-  if (linkOpenCheck !== 'ok') {
-    finalStatus = 'rejeitar';
-  } else if (affiliateValidationStatus === 'confirmado' && !duplicate) {
-    finalStatus = 'pronto_para_publicar';
-  }
+  const finalStatus = computeFinalStatus({ linkOpenCheck, affiliateValidationStatus, duplicate });
 
   const record = {
     platform: detectedPlatform,
@@ -177,9 +185,10 @@ async function processOffer(rawText) {
     recommended_copy_whatsapp: copy1,
     recommended_copy_telegram: copy1,
     final_status: finalStatus,
+    ...PUBLISH_FIELDS,
   };
 
-  return store.saveOffer(record);
+  return await store.saveOffer(record);
 }
 
 module.exports = { processOffer, SUPPORTED_PLATFORMS };

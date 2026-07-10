@@ -5,3 +5,8 @@ node_modules/
 *.db
 npm-debug.log*
 /data/
+# Já cobertos por /data/ acima, listados de novo por clareza: credenciais
+# sensíveis (sessão logada do Mercado Livre, sessões avulsas do GramJS).
+data/ml-storage-state.json
+*.session
+*.session-journal

@@ -116,6 +116,24 @@ https://www.mercadolivre.com.br/produto/MLB999?utm_campaign=grupo1`;
   assert.notEqual(offer.copy_version_1, raw);
 });
 
+test('processOffer: automatico_navegador config leaves the link pending for the browser worker', async () => {
+  mockFetchAlwaysOk('https://www.mercadolivre.com.br/produto/MLB666');
+  store.savePlatformConfig('mercado_livre', {
+    link_generation_method: 'automatico_navegador',
+    domains: ['mercadolivre.com.br'],
+  });
+
+  const raw = 'Mochila boa\nR$ 89,90\nhttps://www.mercadolivre.com.br/produto/MLB666';
+  const offer = await processOffer(raw);
+
+  assert.equal(offer.affiliate_method, 'pendente_automatico');
+  assert.equal(offer.affiliate_link, '');
+  assert.equal(offer.affiliate_validation_status, 'pendente');
+  assert.equal(offer.publish_status, 'nao_publicado');
+  assert.equal(offer.published_at, null);
+  assert.equal(offer.automation_attempts, 0);
+});
+
 test('processOffer: troca_parametro config generates a link but keeps it unconfirmed', async () => {
   mockFetchAlwaysOk('https://www.mercadolivre.com.br/produto/MLB111');
   store.savePlatformConfig('mercado_livre', {
