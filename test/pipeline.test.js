@@ -78,10 +78,25 @@ test('detectPlatform matches configured Mercado Livre domains and rejects unknow
   assert.equal(detectPlatform('https://www.amazon.com.br/produto/x', domains), null);
 });
 
-test('stripTrackingParams removes only generic utm/marketing params', () => {
+test('stripTrackingParams removes only generic utm/marketing params when no platform is given', () => {
   const cleaned = stripTrackingParams('https://www.mercadolivre.com.br/p/MLB1?utm_source=grupo&foo=bar');
   assert.doesNotMatch(cleaned, /utm_source/);
   assert.match(cleaned, /foo=bar/);
+});
+
+test('stripTrackingParams removes a Mercado Livre affiliate ref/matt_* from another affiliate link', () => {
+  // Real link as it appeared shared by another affiliate in a source group.
+  const thirdPartyLink =
+    'https://www.mercadolivre.com.br/social/ofertasgamer?matt_word=ofertasgamer&matt_tool=97705566&forceInApp=true&ref=BPa%2BHaAA0iiGRngVW7sERnCqpiSfN5%2BG1HS9s12zB9MKquZBVMyIMNfK9%2BmuVOBk8%2BtceIhL7N7pny19TcyBHpiyndSHrBZmkNY94MerO6hlj72H5beQRkGsfus1J4tbFV5iBQBw6fwMJBMQ526Qke%2FGpCc11V3R61h10MdQhOgzrvAZqpyKMnOdiGu0oIR9mO1E1aU%3D&skipInApp=true&matt_ignore=true';
+
+  const cleaned = stripTrackingParams(thirdPartyLink, 'mercado_livre');
+
+  assert.doesNotMatch(cleaned, /matt_word/);
+  assert.doesNotMatch(cleaned, /matt_tool/);
+  assert.doesNotMatch(cleaned, /[?&]ref=/);
+  assert.doesNotMatch(cleaned, /forceInApp/);
+  assert.doesNotMatch(cleaned, /skipInApp/);
+  assert.doesNotMatch(cleaned, /matt_ignore/);
 });
 
 test('processOffer end-to-end: ML link with no affiliate config stays pending and is flagged for review', async () => {
@@ -119,20 +134,21 @@ test('processOffer: troca_parametro config generates a link but keeps it unconfi
   assert.equal(offer.final_status, 'revisar_antes_de_publicar');
 });
 
-test('processOffer: URL fragment with affiliate/session tracking survives link cleaning', async () => {
+test('processOffer: URL fragment survives cleaning, but attribution params inside it are still stripped', async () => {
   // fetch() never transmits the URL fragment, so response.url from a real
   // request never includes one — this mocks that real behavior to make sure
-  // we don't silently drop fragment-based tracking (observed in practice:
-  // matt_tool_id, source=affiliate-profile, etc. appear after "#" on some
-  // Mercado Livre links) while "cleaning" the link.
+  // we don't silently drop non-attribution fragment content while
+  // "cleaning" the link, while still scrubbing attribution params (e.g.
+  // matt_tool_id) that may appear there instead of in the query string.
   mockFetchAlwaysOk('https://www.mercadolivre.com.br/produto/MLB444');
   store.savePlatformConfig('mercado_livre', { link_generation_method: 'nao_configurado', domains: ['mercadolivre.com.br'] });
 
   const raw =
-    'Relógio bom\nR$ 94,20\nhttps://www.mercadolivre.com.br/produto/MLB444#matt_tool_id=123&source=affiliate-profile';
+    'Relógio bom\nR$ 94,20\nhttps://www.mercadolivre.com.br/produto/MLB444#wid=MLB444&matt_tool_id=123&source=affiliate-profile';
   const offer = await processOffer(raw);
 
-  assert.match(offer.clean_link, /#matt_tool_id=123&source=affiliate-profile/);
+  assert.match(offer.clean_link, /#wid=MLB444&source=affiliate-profile/);
+  assert.doesNotMatch(offer.clean_link, /matt_tool_id/);
   assert.match(offer.risks_or_doubts, /fragmento/);
 });
 
@@ -172,6 +188,18 @@ test('processOffer: duplicate clean_link is flagged but not auto-rejected', asyn
 
   assert.equal(second.duplicate_of, first.id);
   assert.match(second.risks_or_doubts, /duplicidade/i);
+});
+
+test('processOffer: strips a third-party affiliate ref from the source message before producing clean_link', async () => {
+  const thirdPartyLink =
+    'https://www.mercadolivre.com.br/social/ofertasgamer?matt_word=ofertasgamer&matt_tool=97705566&forceInApp=true&ref=BPa%2BHaAA0iiGRngVW7sERnCqpiSfN5%2BG1HS9s12zB9MKquZBVMyIMNfK9%2BmuVOBk8%2BtceIhL7N7pny19TcyBHpiyndSHrBZmkNY94MerO6hlj72H5beQRkGsfus1J4tbFV5iBQBw6fwMJBMQ526Qke%2FGpCc11V3R61h10MdQhOgzrvAZqpyKMnOdiGu0oIR9mO1E1aU%3D&skipInApp=true&matt_ignore=true';
+  mockFetchAlwaysOk(thirdPartyLink);
+  store.savePlatformConfig('mercado_livre', { link_generation_method: 'manual', domains: ['mercadolivre.com.br'] });
+
+  const raw = `Ofertas de teclado mecânico\nR$ 199,90\n${thirdPartyLink}`;
+  const offer = await processOffer(raw);
+
+  assert.doesNotMatch(offer.clean_link, /matt_word|matt_tool|[?&]ref=|forceInApp|skipInApp|matt_ignore/);
 });
 
 test('processOffer: with multiple URLs, prefers the one matching a configured platform over the first one', async () => {

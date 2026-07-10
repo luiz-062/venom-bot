@@ -92,7 +92,10 @@ async function processOffer(rawText) {
     return store.saveOffer(record);
   }
 
-  const strippedLink = stripTrackingParams(originalLink);
+  // Strips this platform's affiliate attribution (e.g. Mercado Livre's
+  // matt_word/matt_tool/ref) so a link shared by a THIRD-PARTY affiliate
+  // never keeps carrying their attribution forward into our own output.
+  const strippedLink = stripTrackingParams(originalLink, detectedPlatform);
   const resolution = await resolveFinalUrl(strippedLink);
   const linkOpenCheck = resolution.ok ? 'ok' : 'falhou';
 
@@ -100,9 +103,10 @@ async function processOffer(rawText) {
   // resolved redirect target never carries one back — even when the
   // fragment held real attribution data (observed in practice on some
   // Mercado Livre links: matt_tool_id, source=affiliate-profile, etc).
-  // Reattach the original fragment before treating the link as "clean".
+  // Reattach the original fragment before treating the link as "clean",
+  // then strip attribution params again (now also from the fragment).
   const resolvedWithFragment = preserveFragment(resolution.finalUrl || strippedLink, strippedLink);
-  const cleanLink = stripTrackingParams(resolvedWithFragment);
+  const cleanLink = stripTrackingParams(resolvedWithFragment, detectedPlatform);
 
   if (!resolution.ok) {
     risks.push(
