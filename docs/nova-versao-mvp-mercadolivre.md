@@ -215,18 +215,20 @@ No MVP, apenas a linha `mercado_livre` precisa estar preenchida (mesmo que parci
 
 ## 9. O que deve ficar fora do MVP
 
-- Scraping pesado de grupos/canais.
-- Leitura automática de WhatsApp ou Telegram.
-- Qualquer dependência de WhatsApp Web não-oficial para *ler* mensagens (a experiência anterior com `venom-bot` já mostrou o padrão de risco: reconexões, `CONFLICT`, sessões caindo).
-- Envio automático de mensagem sem revisão humana — inclusive para grupos/canais próprios.
+> **Atualização (10/07/2026, ver seção 13):** os dois primeiros itens abaixo (leitura automática de Telegram e envio automático sem revisão) foram **revisitados e revertidos por decisão explícita do usuário**, só para o Telegram, depois de pesquisa de risco e confirmação ciente — não foram esquecidos. WhatsApp continua exatamente como estava: fora do MVP, sem automação nenhuma.
+
+- ~~Scraping pesado de grupos/canais.~~ Mantido para WhatsApp; Telegram agora usa um userbot oficial-porém-não-documentado (GramJS/MTProto), não scraping de página.
+- ~~Leitura automática de WhatsApp ou Telegram.~~ Telegram agora é automático (ver seção 13); WhatsApp continua manual.
+- Qualquer dependência de WhatsApp Web não-oficial para *ler* mensagens (a experiência anterior com `venom-bot` já mostrou o padrão de risco: reconexões, `CONFLICT`, sessões caindo) — **mantido integralmente para WhatsApp**.
+- ~~Envio automático de mensagem sem revisão humana — inclusive para grupos/canais próprios.~~ Telegram agora publica sozinho (ver seção 13, com o aviso de que isso não equivale a comissão confirmada); WhatsApp continua exigindo cópia/cola manual.
 - Cópia literal de mensagem de outro afiliado como publicação final.
 - Reaproveitamento direto de imagem de terceiros.
 - Qualquer afirmação de comissão garantida sem confirmação oficial.
-- Troca de parâmetro tratada como garantia (só como hipótese marcada).
+- Troca de parâmetro tratada como garantia (só como hipótese marcada) — continua descartada; a automação de link agora usa navegador real contra o portal oficial, não substituição de parâmetro (ver seção 13).
 - Filtros comerciais obrigatórios (desconto mínimo, preço máximo, categoria, limite diário, ranking).
 - Dashboard sofisticado — planilha ou tela simples já resolve o MVP.
 - Múltiplas integrações de plataforma simultâneas antes do fluxo básico (Mercado Livre) estar validado.
-- Publicação automática em grupos/canais de terceiros (e mesmo em próprios, ver item de envio automático acima).
+- Publicação automática em grupos/canais **de terceiros** — continua descartada sem exceção; a automação de publicação só vale pro canal próprio do Telegram.
 - Suporte a Shopee funcional (fica só como estrutura de configuração prevista, não implementada).
 
 ---
@@ -286,3 +288,52 @@ Cada fase só deve iniciar depois que a fase anterior tiver os critérios de suc
 - O histórico evita repetição perceptível do mesmo produto em publicações próximas.
 
 Se esses critérios forem atingidos com o fluxo manual, aí sim faz sentido avançar para a Fase 2/3 do backlog.
+
+---
+
+## 13. Automação integral (Telegram + geração de link ML) — decisão de 10/07/2026
+
+O usuário pediu que a ferramenta ficasse **integralmente autônoma**, sem nenhum passo manual. Antes de implementar, foi feita pesquisa de risco por canal (GramJS/Telegram, Baileys/WhatsApp Web, API oficial do WhatsApp Business, banimentos documentados em 2025/2026) e o usuário decidiu, de forma explícita e informada:
+
+- **Telegram**: automatizar tudo — ler ofertas de canais-fonte que o usuário segue (mas não administra) e publicar sozinho no canal próprio.
+- **Mercado Livre**: gerar o link de afiliado automaticamente via automação de navegador (Playwright) imitando o fluxo real do "Gerador de Links" da central oficial — não construir/adivinhar parâmetro (`troca_parametro` continua descartado, ver seção 5).
+- **WhatsApp**: continua 100% manual. Decisão explícita, depois de mostrar ao usuário que o WhatsApp está detectando e banindo ativamente contas com exatamente esse padrão de uso em 2025/2026 (baixa taxa de resposta, leitura passiva de grupo, mensagens automáticas sem resposta em 48h), e que não existe nenhum caminho oficial nem pra ler grupo de terceiro nem pra postar num grupo próprio já existente (a API de Grupos oficial do WhatsApp só cobre grupos criados pela própria empresa, limitados a 8 participantes).
+
+### Aviso crítico: automação de geração ≠ automação de validação
+
+Publicar automaticamente **não é o mesmo que confirmar comissão**. O gatilho de publicação (`src/telegram/publisherWorker.js`, via `store.listOffersReadyToPublish()`) continua sendo só "o link abre" + "existe um link afiliado" — o sistema **nunca** marca `affiliate_validation_status: confirmado` sozinho, porque isso só pode ser confirmado olhando pra uma venda real no painel do Mercado Livre. Ou seja: o sistema publica ofertas com link de afiliado que ainda não se sabe se realmente gera comissão. Essa é uma consequência direta e consciente de tirar a revisão humana do loop.
+
+### Arquitetura
+
+Tudo roda **num único processo Node** (`src/index.js`), não em processos separados — isso evita condição de corrida na escrita dos arquivos JSON sem precisar de banco de dados, já que dentro de um mesmo processo as escritas síncronas (`fs.*Sync`) não se intercalam.
+
+```
+src/index.js
+├── server.js                              (Express: /config, /offers, histórico)
+├── telegram/sourceReader.js               (GramJS userbot — ouve canais-fonte, chama processOffer())
+├── automation/linkGenerationWorker.js     (fila com atraso jitter, gera link via navegador)
+└── telegram/publisherWorker.js            (fila com limite de envio, publica no canal próprio)
+```
+
+A geração de link roda num worker separado (não dentro do `processOffer` original) porque abrir navegador e simular clique é lento e precisa de espaçamento entre chamadas pra não parecer automação em massa pro Mercado Livre — os números de atraso (`min_delay_seconds`/`max_delay_seconds`, padrão 45–120s) são um ponto de partida configurável em `/config/telegram`, não um valor confirmado oficialmente.
+
+### Novos campos de oferta
+
+`affiliate_method: "pendente_automatico"` (aguardando o worker) e `"automatico_navegador"` (gerado com sucesso pelo worker); `publish_status` (`nao_publicado` | `publicado` | `falhou`), `published_at`, `published_channel`, `automation_attempts` (usado para desistir e cair pra manual depois de falhas repetidas).
+
+### Novos campos de configuração (`data/app-config.json`, separado de `platform-config.json`)
+
+`telegram.source_chat_ids`, `telegram.publish_channel_id`, `telegram.owner_chat_id` (alertas), `telegram.auto_publish_enabled`, `mercado_livre_automation.auto_generate_enabled`, `mercado_livre_automation.min_delay_seconds`/`max_delay_seconds` — todos editáveis em `/config/telegram`, sem precisar mexer em arquivo.
+
+### O que só o usuário pode fazer (impossível fazer via código/sandbox)
+
+1. Criar um app em `my.telegram.org` (`TELEGRAM_API_ID`/`TELEGRAM_API_HASH`).
+2. Rodar `npm run telegram-login` uma vez, na própria máquina, com o celular em mãos — gera `TELEGRAM_SESSION_STRING` pro `.env`.
+3. Rodar `npm run list-chats` pra descobrir os IDs dos canais-fonte.
+4. Criar um bot via `@BotFather`, adicionar como admin do canal próprio.
+5. Rodar `npm run ml-login` uma vez, numa máquina com tela, e logar normalmente (inclusive QR/2FA) — salva a sessão do Mercado Livre.
+6. Hospedar isso numa máquina que fica ligada o tempo todo (não roda de forma persistente num sandbox efêmero).
+
+### Limitação conhecida desta implementação
+
+Os seletores reais da página do Gerador de Links (`src/automation/affiliateLinkAutomation.js`) são **placeholders** — não foi possível verificá-los contra a página real a partir do ambiente onde isso foi desenvolvido (sem acesso a uma sessão logada, e sem acesso de rede a mercadolivre.com.br no sandbox). Precisam ser confirmados com `npx playwright codegen` uma vez que `data/ml-storage-state.json` existir (passo 5 acima).

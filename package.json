@@ -1,19 +1,26 @@
 {
   "name": "afiliados-mercado-livre-mvp",
   "version": "0.1.0",
-  "description": "MVP manual/semi-automático para transformar mensagens de ofertas em publicações próprias com link afiliado do Mercado Livre.",
-  "main": "src/server.js",
+  "description": "Transforma mensagens de ofertas em publicações próprias com link afiliado do Mercado Livre — leitura e publicação automáticas via Telegram; WhatsApp continua manual por decisão deliberada.",
+  "main": "src/index.js",
   "type": "commonjs",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "test": "node --test test/*.test.js"
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/*.test.js",
+    "postinstall": "playwright install chromium",
+    "telegram-login": "node scripts/telegramLogin.js",
+    "ml-login": "node scripts/mercadoLivreLogin.js",
+    "list-chats": "node scripts/listMyChats.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "grammy": "^1.30.0",
+    "playwright": "^1.47.0",
+    "telegram": "^2.26.16"
   }
 }
