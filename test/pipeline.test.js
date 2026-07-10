@@ -51,6 +51,18 @@ https://www.mercadolivre.com.br/fone-bluetooth-xyz/p/MLB123456?utm_source=grupo`
   assert.ok(data.productName && data.productName.length > 0);
 });
 
+test('extractOfferData ignores installment mentions when picking the offer price', () => {
+  const raw = `Panela elétrica
+De R$ 399,90 por R$ 249,90
+ou 10x de R$ 24,99 sem juros
+https://www.mercadolivre.com.br/produto/MLB555`;
+
+  const data = extractOfferData(raw);
+
+  assert.equal(data.priceOriginal, 'R$ 399,90');
+  assert.equal(data.priceCurrent, 'R$ 249,90');
+});
+
 test('extractOfferData never invents fields that are not present', () => {
   const data = extractOfferData('só um texto qualquer sem link nem preço');
   assert.equal(data.urls.length, 0);
@@ -160,4 +172,16 @@ test('processOffer: duplicate clean_link is flagged but not auto-rejected', asyn
 
   assert.equal(second.duplicate_of, first.id);
   assert.match(second.risks_or_doubts, /duplicidade/i);
+});
+
+test('processOffer: with multiple URLs, prefers the one matching a configured platform over the first one', async () => {
+  mockFetchAlwaysOk('https://www.mercadolivre.com.br/produto/MLB777');
+  store.savePlatformConfig('mercado_livre', { link_generation_method: 'manual', domains: ['mercadolivre.com.br'] });
+
+  const raw =
+    'Relógio bom\nR$ 79,90\nhttps://bit.ly/rastreio-generico\nhttps://www.mercadolivre.com.br/produto/MLB777';
+  const offer = await processOffer(raw);
+
+  assert.equal(offer.platform, 'mercado_livre');
+  assert.match(offer.original_link, /mercadolivre\.com\.br/);
 });

@@ -2,6 +2,9 @@ const URL_REGEX = /(https?:\/\/[^\s<>()"]+)/gi;
 const PRICE_REGEX = /R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?/gi;
 const COUPON_REGEX = /\b(?:cupom|cupon|código|codigo)\b[:\s]*([A-Z0-9][A-Z0-9\-]{2,19})/i;
 const SHIPPING_KEYWORDS = /frete\s*gr[aá]tis[^\n.]*|frete\s*acima\s*de[^\n.]*/gi;
+// Installment mentions (e.g. "12x de R$ 9,90 sem juros") quote a per-parcel
+// value, not the offer's price — must be excluded before picking prices.
+const INSTALLMENT_REGEX = /\d+\s*x\s*(?:de\s*)?R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?(?:\s*sem\s*juros)?/gi;
 
 function stripTrailingPunctuation(url) {
   return url.replace(/[.,;:!?)\]"'”’]+$/g, '');
@@ -82,11 +85,13 @@ function extractOfferData(rawText) {
 
   const shippingMatches = findShippingMatches(text);
   const shippingNotes = extractShippingNotes(shippingMatches);
+  const installmentMatches = text.match(INSTALLMENT_REGEX) || [];
 
-  // Prices quoted inside a shipping note (e.g. "frete grátis acima de R$ 79")
-  // must not be picked up as the offer's price, so strip those segments first.
+  // Prices quoted inside a shipping note ("frete grátis acima de R$ 79") or
+  // an installment mention ("12x de R$ 9,90 sem juros") must not be picked
+  // up as the offer's price, so strip those segments before scanning.
   let textForPrices = text;
-  shippingMatches.forEach((match) => {
+  [...shippingMatches, ...installmentMatches].forEach((match) => {
     textForPrices = textForPrices.split(match).join(' ');
   });
   const { priceOriginal, priceCurrent } = extractPrices(textForPrices);

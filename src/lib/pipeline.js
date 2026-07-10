@@ -52,7 +52,11 @@ async function processOffer(rawText) {
   }
 
   const platformDomains = buildPlatformDomains();
-  const originalLink = extracted.urls[0];
+  // Messages sometimes carry more than one URL (a tracking/shortener link
+  // alongside the real product link). Prefer whichever URL already matches a
+  // configured platform domain; fall back to the first URL otherwise.
+  const originalLink =
+    extracted.urls.find((url) => detectPlatform(url, platformDomains)) || extracted.urls[0];
   const detectedPlatform = detectPlatform(originalLink, platformDomains);
 
   if (!detectedPlatform || !SUPPORTED_PLATFORMS.includes(detectedPlatform)) {

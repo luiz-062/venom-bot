@@ -12,12 +12,18 @@ const DEFAULT_CONFIG = {
     affiliate_id: '',
     affiliate_tag: '',
     api_token: '',
-    link_generation_method: 'nao_configurado',
+    // "manual" reflete o achado real (ver docs/nova-versao-mvp-mercadolivre.md
+    // seção 5): links de afiliado observados vieram de uma sessão logada do
+    // usuário (matt_*, source=affiliate-profile), não de uma fórmula
+    // replicável por troca de parâmetro. Trocar para "troca_parametro" só se
+    // um mecanismo oficial de substituição for confirmado.
+    link_generation_method: 'manual',
     tracking_param_name: '',
     tracking_param_value: '',
     official_url_pattern: '',
     example_link: '',
-    tracking_notes: '',
+    tracking_notes:
+      'Cole manualmente, no campo "Ajustar link afiliado" da oferta, o link já gerado pela sua sessão de afiliado no Mercado Livre. Ainda não confirmado oficialmente — validar comissão real no painel do Mercado Livre antes de confiar nele.',
     config_status: 'pendente',
     // meli.la é o encurtador usado nas mensagens reais de oferta do Mercado
     // Livre observadas em teste; ainda assim, confirme oficialmente que o
