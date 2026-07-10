@@ -146,6 +146,21 @@ Checklist de validação mínima obrigatória no MVP (todos os itens, nesta orde
 - O fragmento da URL (depois de `#`) nunca é enviado ao servidor numa requisição HTTP — qualquer etapa que resolva/"limpe" o link via requisição de rede tem que reanexar o fragmento original manualmente antes de aplicar a limpeza, ou perde silenciosamente dados que estejam lá (de atribuição de terceiro ou não).
 - O caminho seguro para o link do **próprio usuário** continua sendo colar manualmente o link `meli.la` gerado pela central de afiliados (campo `affiliate_link` editável na tela da oferta) — o sistema não tenta reconstruir esse formato por conta própria, só evita repassar a atribuição de terceiros.
 
+### Achado de pesquisa externa (10/07/2026)
+
+Pesquisa em busca web e repositórios reais do GitHub para responder às perguntas 2, 9 e 10 desta seção (existe API oficial de afiliados? `matt_word`/`matt_tool`/`ref` são o mecanismo real de comissão?).
+
+**CONFIRMADO:**
+- **Não existe API pública documentada para gerar link de afiliado do Mercado Livre.** Evidência: três reclamações independentes no Reclame Aqui especificamente sobre isso ("Programa de afiliados do Mercado Livre não tem uma API", "Falta de API... impede a automação", "Ausência de API para afiliados"); o SDK oficial Node.js (`github.com/mercadolibre/nodejs-sdk`, descontinuado desde 2021) só cobre Items/RestClient, sem nada de afiliados; ferramentas de terceiros no GitHub que se anunciam como "geradoras" (`DeivianDS/mercadolivre-afiliados`, `Fripixel/mercadolivre-link-de-afiliados`) na prática só instruem gerar um link de exemplo manualmente no portal oficial e reaproveitar o padrão — nenhuma documenta uma API real.
+- **Regra oficial (páginas de ajuda do Mercado Livre):** "Se divulgar apenas o link comum do produto, sem passar pelo gerador, não recebe comissão." Isso inclui qualquer link com parâmetro adicionado manualmente por fora do gerador oficial. Consequência direta: o método `troca_parametro` (seção 5, item 2 da ordem de segurança) deve ser tratado como **muito provavelmente não funcional**, não apenas "hipótese não confirmada" como estava documentado antes.
+- **Risco de suspensão de conta, não só de comissão perdida.** Múltiplas reclamações independentes no Reclame Aqui relatam contas de afiliado suspensas porque o Mercado Livre "não conseguia identificar a origem dos links" gerados, mesmo depois do afiliado explicar seus canais de divulgação. Motivo a mais para não construir links por conta própria.
+- **Mecanismo oficial confirmado de geração, sempre manual:** "Gerador de Links" (`mercadolivre.com.br/l/afiliados-gere-seus-links` — colar o link do produto, clicar em "Gerar"), "Barra de afiliados" (recurso ativado nas configurações do portal, funciona em desktop e mobile, botão "Compartilhar" no produto), ou extensões de terceiros (ex. "Assistente de Links de Afiliados", "Afilialink" na Chrome Web Store) que encapsulam a mesma geração vinculada à conta logada.
+- **`developers.mercadolivre.com.br` é uma API real, mas não tem relação com afiliados.** É a API geral de integração (Items/Orders/Users/Prices) com OAuth2 de verdade (`client_id`/`client_secret` de uma aplicação registrada, fluxo `authorization_code`, `redirect_uri`). Útil para o backlog futuro de validação de preço/disponibilidade (ver seção 10), não para geração de link de afiliado.
+
+**NÃO CONFIRMADO (tratar como não verificado, não implementar com base nisso):**
+- Blogs de marketing (ex. `afiliadomarketplace.com.br`, títulos genéricos de SEO tipo "Guia Completo"/"Domine o Último") afirmam existir uma "API programática de afiliados para quem tem 500+ cliques/dia". Isso contradiz as reclamações reais no Reclame Aqui e não aparece em nenhuma documentação ou SDK oficial. Só uma resposta direta do suporte de afiliados do Mercado Livre resolveria isso de vez.
+- Se `matt_word`/`matt_tool` são fixos por conta (reutilizáveis) ou gerados a cada link continua sem confirmação pública.
+
 ---
 
 ## 6. Regras de geração de copy
@@ -168,7 +183,8 @@ Checklist de validação mínima obrigatória no MVP (todos os itens, nesta orde
 - Checar apenas "o link abre" é um teste fraco: não decide gerar falso positivo de item "pronto" — por isso o status final default deve tender a `revisar_antes_de_publicar`.
 
 **Comercial**
-- Link com troca de parâmetro sem confirmação oficial pode simplesmente não gerar comissão nenhuma — isso é risco de negócio direto, não só técnico. Precisa ficar visível no status (`nao_confirmado`) até validar com resultado real de comissão no painel do Mercado Livre.
+- Link com troca de parâmetro sem confirmação oficial pode simplesmente não gerar comissão nenhuma — isso é risco de negócio direto, não só técnico. Precisa ficar visível no status (`nao_confirmado`) até validar com resultado real de comissão no painel do Mercado Livre. **Atualização (pesquisa 10/07/2026, ver seção 5):** a própria central de ajuda do Mercado Livre confirma que link fora do gerador oficial não gera comissão — trate `troca_parametro` como praticamente inútil, não como "talvez funcione".
+- **Risco de suspensão de conta:** múltiplas reclamações reais no Reclame Aqui relatam contas de afiliado suspensas por o Mercado Livre "não conseguir identificar a origem dos links" gerados fora do fluxo oficial. Usar um link construído manualmente por este sistema (em vez de gerado pela central/barra de afiliados) pode não só falhar em gerar comissão como colocar a conta de afiliado em risco.
 - Preço e cupom mudam rápido; qualquer copy publicada com dado desatualizado é risco de reputação com o público do grupo/canal próprio.
 
 **Política/Plataforma**
@@ -191,6 +207,7 @@ Tabela de configuração (`platform_config`), uma linha por plataforma, com todo
 - `example_link`
 - `tracking_notes`
 - `config_status` (ex.: "configurado" | "pendente" | "não confirmado")
+- `detected_link_format`, `detected_matt_word`, `detected_matt_tool`, `detected_tag`, `sample_link_saved_at` (só Mercado Livre; só leitura/log, preenchidos pela ação "colar link de exemplo para detectar formato" em `/config`. Registram o formato de um link real colado pelo usuário — `meli_la_short` | `long_form_matt` | `long_form_tag` | `desconhecido` | `invalido` — para fins de auditoria/observação. **Nunca** são lidos por `generateAffiliateLink()` nem usados para montar automaticamente o link de outro produto.)
 
 No MVP, apenas a linha `mercado_livre` precisa estar preenchida (mesmo que parcialmente); a linha `shopee` pode existir vazia/"pendente" só para não quebrar a separação por plataforma que já era um ponto forte da versão anterior.
 
@@ -221,7 +238,8 @@ Fluxo manual completo: colar → extrair → identificar link → gerar link afi
 
 **Fase 2 — Reforço de confiança e produtividade**
 - Validação de comissão real via confirmação no painel/relatório oficial do programa de afiliados (não só "link abre").
-- Verificação de preço atual, disponibilidade e cupom ativo (via meios oficiais, a confirmar o que a plataforma permite).
+- Verificação de preço atual, disponibilidade e cupom ativo via a API geral oficial do Mercado Livre (`developers.mercadolivre.com.br`, Items/Prices), usando OAuth2: `client_id`/`client_secret` de uma aplicação registrada no portal de desenvolvedores, fluxo `authorization_code`, `redirect_uri` configurado, URLs de autorização regionais. **Importante:** essa API é separada da geração de link de afiliado — cobre só dados de item/preço/pedido/usuário, confirmado na pesquisa de 10/07/2026 (seção 5).
+- Investigar "Barra de afiliados" e extensões de terceiros (ex. "Assistente de Links de Afiliados", "Afilialink") como forma de acelerar a etapa manual de geração de link — ferramenta do lado do usuário, não automação de backend. Não implementar chamadas automáticas a essas extensões; é só levantamento de viabilidade/usabilidade para o usuário.
 - Histórico de duplicidade mais robusto (janela de tempo, fuzzy match por produto).
 - Ativação da Shopee com o mesmo padrão de configuração já previsto na estrutura de dados.
 
@@ -242,16 +260,18 @@ Cada fase só deve iniciar depois que a fase anterior tiver os critérios de suc
 
 ## 11. Perguntas pendentes antes do desenvolvimento
 
-1. Qual é exatamente o programa/mecanismo oficial de afiliados do Mercado Livre disponível hoje para a conta do usuário (API, painel, gerador de link, ou nenhum deles)? Precisa ser confirmado diretamente no Mercado Livre/Mercado Livre Afiliados.
-2. Trocar parâmetro de URL do Mercado Livre realmente é reconhecido pelo sistema de afiliados para fins de comissão, ou existe um único método oficial de geração de link que precisa ser usado? Não presumir — confirmar oficialmente.
+1. **Respondida (pesquisa 10/07/2026, ver seção 5):** o mecanismo oficial é manual — "Gerador de Links" ou "Barra de afiliados" na central de afiliados. Não existe API pública para isso; a opção "Developer" do Mercado Livre (`developers.mercadolivre.com.br`) é uma API geral de integração (itens/pedidos/preços), sem relação com afiliados.
+2. **Respondida com alta confiança, evidência contra (pesquisa 10/07/2026):** NÃO — a central de ajuda do Mercado Livre afirma diretamente que um link que não passou pelo gerador oficial não gera comissão. Mantida aqui só porque nenhuma venda real do usuário ainda confirmou o efeito exato de `troca_parametro` na prática (nenhuma comissão testada com esse método).
 3. Quais domínios/formatos de link (incluindo encurtadores) o Mercado Livre usa hoje, para a etapa de identificação e limpeza de link funcionar corretamente?
 4. A conta de afiliado do usuário já está ativa e aprovada no Mercado Livre, ou isso ainda precisa ser resolvido antes de qualquer teste real de comissão?
 5. Onde e como o usuário vai efetivamente "colar a mensagem" no MVP — planilha (Google Sheets/Excel), formulário simples, ou uma interface mínima? Isso muda a stack de implementação.
 6. O histórico de duplicidade deve considerar apenas o link/produto, ou também uma janela de tempo (ex.: não repetir o mesmo produto em X dias)?
 7. Quem, além do usuário, vai revisar/publicar as ofertas? Isso importa para decidir se basta uma planilha compartilhada ou se vale um mini-painel com login.
 8. Existe algum limite de volume esperado por dia/semana no MVP, para dimensionar se planilha resolve ou se já vale banco de dados desde o início?
-9. Os parâmetros `matt_*`/`ref` (ver seção 5) são de fato o mecanismo de rastreio de comissão do Mercado Livre, ou apenas metadados de navegação/recomendação sem relação com comissão? O formato curto `meli.la/<código>` já foi confirmado pelo usuário como gerado pela central oficial de afiliados — falta confirmar se é a comissão em si que depende desses parâmetros ou só a navegação. Só o painel oficial de relatórios de afiliado, com uma venda real, pode confirmar isso.
-10. O `matt_word`/`matt_tool`/`ref` são específicos da conta/sessão que os gerou (e portanto não podem ser reaproveitados por outra conta/produto) ou existe uma forma de gerá-los programaticamente a partir do `affiliate_id`? Isso decide se "colar o link `meli.la` já gerado manualmente" precisa continuar sendo o método padrão por mais tempo, ou se dá pra automatizar com segurança no futuro.
+9. **Respondida com alta confiança, evidência contra (pesquisa 10/07/2026):** provavelmente não bastam sozinhos — a regra oficial é que só o link gerado pelo gerador/barra de afiliados conta, então `matt_word`/`matt_tool`/`ref` parecem ser efeito de passar por ali, não uma fórmula que possa ser replicada isoladamente. Ainda assim, só uma venda real confirmada no painel de relatórios do Mercado Livre resolve isso de vez.
+10. **Ainda aberta.** O `matt_word`/`matt_tool`/`ref` são específicos da conta/sessão que os gerou (e portanto não podem ser reaproveitados por outra conta/produto) ou existe uma forma de gerá-los programaticamente a partir do `affiliate_id`? Só pode ser resolvida perguntando diretamente ao suporte de afiliados do Mercado Livre, ou testando atribuição de comissão real com vendas reais — não deve ser resolvida por suposição no código. A ferramenta de detecção de formato (`detectAffiliateLinkFormat`, seção 8) pode ajudar a **observar** isso ao longo do tempo (colando vários links reais gerados em momentos diferentes), mas não decide nada sozinha.
+11. Existe mesmo uma "API de afiliados para alto volume (500+ cliques/dia)" como alegam alguns blogs de marketing, ou isso é desinformação? Contradiz reclamações reais de usuários (seção 5) — só o suporte oficial do Mercado Livre pode confirmar.
+12. "Barra de afiliados" e extensões de terceiros (seção 10, Fase 2) realmente aceleram a geração manual o suficiente para valer a pena documentar/recomendar como parte do fluxo?
 
 ---
 

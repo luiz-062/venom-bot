@@ -29,6 +29,15 @@ const DEFAULT_CONFIG = {
     // cobrem os links de produto "crus" (não encurtados) que aparecem nas
     // mensagens-fonte.
     domains: ['mercadolivre.com.br', 'mercadolibre.com', 'meli.la'],
+    // Campos só de leitura/log, preenchidos pela ação "colar link de exemplo
+    // para detectar formato" em /config. NUNCA são lidos por
+    // generateAffiliateLink() nem usados para montar um link novo — servem
+    // só de auditoria (ver docs/nova-versao-mvp-mercadolivre.md seção 8).
+    detected_link_format: '',
+    detected_matt_word: '',
+    detected_matt_tool: '',
+    detected_tag: '',
+    sample_link_saved_at: '',
   },
   shopee: {
     platform: 'shopee',
